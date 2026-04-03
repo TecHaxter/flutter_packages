@@ -385,17 +385,20 @@ class CameraService {
     }
     final web.ImageData imageData;
     if (hasPropertyOffScreenCanvas()) {
-      if (_offscreenCanvas == null ||
-          _offscreenCanvas!.width != width ||
+      _offscreenCanvas ??= web.OffscreenCanvas(width, height);
+      if (_offscreenCanvas!.width != width ||
           _offscreenCanvas!.height != height) {
-        _offscreenCanvas = web.OffscreenCanvas(width, height);
+        _offscreenCanvas!
+          ..width = width
+          ..height = height;
       }
-      final web.OffscreenCanvasRenderingContext2D context =
+      final context =
           _offscreenCanvas!.getContext(
                 '2d',
                 <String, Object?>{'willReadFrequently': true}.jsify(),
               )!
               as web.OffscreenCanvasRenderingContext2D;
+
       context.drawImage(videoElement, 0, 0);
       imageData = context.getImageData(0, 0, width, height);
     } else {
