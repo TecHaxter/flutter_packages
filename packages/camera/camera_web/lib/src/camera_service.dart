@@ -383,7 +383,7 @@ class CameraService {
         'Computed dimensions are zero: width=$width, height=$height',
       );
     }
-    late web.ImageData imageData;
+    final web.ImageData imageData;
     if (hasPropertyOffScreenCanvas()) {
       if (_offscreenCanvas == null ||
           _offscreenCanvas!.width != width ||
