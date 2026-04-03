@@ -363,18 +363,18 @@ class CameraService {
     }
   }
 
-  ///Used to check if browser has OffscreenCanvas capability
+  /// Used to check if browser has OffscreenCanvas capability
   bool hasPropertyOffScreenCanvas() {
     return jsUtil.hasProperty(window, 'OffscreenCanvas'.toJS);
   }
 
-  ///Used in [takeFrame] if `OffscreenCanvas` is not supported
+  /// Used in [takeFrame] if `OffscreenCanvas` is not supported
   web.CanvasElement? _canvasElement;
 
-  ///Used in [takeFrame] if `OffscreenCanvas` is supported
+  /// Used in [takeFrame] if `OffscreenCanvas` is supported
   web.OffscreenCanvas? _offscreenCanvas;
 
-  ///Returns frame at a specific time using video element
+  /// Returns frame at a specific time using video element
   CameraImageData takeFrame(web.VideoElement videoElement) {
     final int width = videoElement.videoWidth;
     final int height = videoElement.videoHeight;
