@@ -2221,6 +2221,12 @@ void main() {
       );
     });
 
+    testWidgets('supportsImageStreaming returns true', (
+      WidgetTester tester,
+    ) async {
+      expect(CameraPlatform.instance.supportsImageStreaming(), isTrue);
+    });
+
     group('dispose', () {
       late Camera camera;
       late MockVideoElement mockVideoElement;
