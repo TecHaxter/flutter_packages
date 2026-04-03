@@ -1,3 +1,20 @@
+## 2.0.34
+
+* Updates build files from Groovy to Kotlin.
+* Updates README to reflect currently supported OS version.
+
+## 2.0.33
+
+* Bumps com.android.tools.build:gradle from 8.12.1 to 8.13.1.
+
+## 2.0.32
+
+* Updates Java compatibility version to 17 and minimum supported SDK version to Flutter 3.35/Dart 3.9.
+
+## 2.0.31
+
+* Resolves Gradle 9 deprecations.
+
 ## 2.0.30
 
 * Bumps com.android.tools.build:gradle to 8.12.1.

@@ -1,3 +1,11 @@
+## NEXT
+
+* Updates minimum supported SDK version to Flutter 3.35/Dart 3.9.
+
+## 2.12.0
+
+* Adds support for video stabilization.
+
 ## 2.11.0
 
 * Adds a flag to configure a recording to be persistent across camera changes. See

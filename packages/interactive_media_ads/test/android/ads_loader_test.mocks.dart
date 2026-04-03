@@ -27,6 +27,7 @@ import 'package:mockito/src/dummies.dart' as _i6;
 // ignore_for_file: unnecessary_parenthesis
 // ignore_for_file: camel_case_types
 // ignore_for_file: subtype_of_sealed_class
+// ignore_for_file: invalid_use_of_internal_member
 
 class _FakePigeonInstanceManager_0 extends _i1.SmartFake
     implements _i2.PigeonInstanceManager {
@@ -606,18 +607,6 @@ class MockAdsManager extends _i1.Mock implements _i2.AdsManager {
 /// See the documentation for Mockito's code generation for more information.
 class MockAdsManagerLoadedEvent extends _i1.Mock
     implements _i2.AdsManagerLoadedEvent {
-  @override
-  _i2.AdsManager get manager =>
-      (super.noSuchMethod(
-            Invocation.getter(#manager),
-            returnValue: _FakeAdsManager_6(this, Invocation.getter(#manager)),
-            returnValueForMissingStub: _FakeAdsManager_6(
-              this,
-              Invocation.getter(#manager),
-            ),
-          )
-          as _i2.AdsManager);
-
   @override
   _i2.PigeonInstanceManager get pigeon_instanceManager =>
       (super.noSuchMethod(
@@ -1567,12 +1556,10 @@ class MockSurfaceAndroidViewController extends _i1.Mock
   _i4.PointTransformer get pointTransformer =>
       (super.noSuchMethod(
             Invocation.getter(#pointTransformer),
-            returnValue:
-                (_i3.Offset position) =>
-                    _FakeOffset_18(this, Invocation.getter(#pointTransformer)),
-            returnValueForMissingStub:
-                (_i3.Offset position) =>
-                    _FakeOffset_18(this, Invocation.getter(#pointTransformer)),
+            returnValue: (_i3.Offset position) =>
+                _FakeOffset_18(this, Invocation.getter(#pointTransformer)),
+            returnValueForMissingStub: (_i3.Offset position) =>
+                _FakeOffset_18(this, Invocation.getter(#pointTransformer)),
           )
           as _i4.PointTransformer);
 

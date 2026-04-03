@@ -8,9 +8,8 @@ import 'package:in_app_purchase_platform_interface/in_app_purchase_platform_inte
 
 import '../../in_app_purchase_storekit.dart';
 import '../../store_kit_wrappers.dart';
+import '../in_app_purchase_apis.dart';
 import '../sk2_pigeon.g.dart';
-
-InAppPurchase2API _hostApi = InAppPurchase2API();
 
 /// Dart wrapper around StoreKit2's [Transaction](https://developer.apple.com/documentation/storekit/transaction)
 /// Note that in StoreKit2, a Transaction encompasses the data contained by
@@ -28,6 +27,7 @@ class SK2Transaction {
     this.subscriptionGroupID,
     this.price,
     this.error,
+    this.receiptData,
     this.jsonRepresentation,
   });
 
@@ -42,7 +42,7 @@ class SK2Transaction {
   /// The product identifier of the in-app purchase.
   final String productId;
 
-  /// The date that the App Store charged the user’s account for a purchased or
+  /// The date that the App Store charged the user's account for a purchased or
   /// restored product, or for a subscription purchase or renewal after a lapse.
   final String purchaseDate;
 
@@ -64,7 +64,11 @@ class SK2Transaction {
   /// Any error returned from StoreKit
   final SKError? error;
 
-  /// The json representation of a transaction
+  /// The JWS (JSON Web Signature) representation of the transaction.
+  /// This is the jwsRepresentation from StoreKit used for server-side verification.
+  final String? receiptData;
+
+  /// The json representation of a transaction.
   final String? jsonRepresentation;
 
   /// Wrapper around [Transaction.finish]
@@ -72,14 +76,26 @@ class SK2Transaction {
   /// Indicates to the App Store that the app delivered the purchased content
   /// or enabled the service to finish the transaction.
   static Future<void> finish(int id) async {
-    await _hostApi.finish(id);
+    await hostApi2.finish(id);
   }
 
   /// A wrapper around [Transaction.all]
   /// https://developer.apple.com/documentation/storekit/transaction/3851203-all
-  /// A sequence that emits all the customer’s transactions for your app.
+  /// A sequence that emits all the customer's transactions for your app.
   static Future<List<SK2Transaction>> transactions() async {
-    final List<SK2TransactionMessage> msgs = await _hostApi.transactions();
+    final List<SK2TransactionMessage> msgs = await hostApi2.transactions();
+    final List<SK2Transaction> transactions = msgs
+        .map((SK2TransactionMessage e) => e.convertFromPigeon())
+        .toList();
+    return transactions;
+  }
+
+  /// A wrapper around [Transaction.unfinished]
+  /// https://developer.apple.com/documentation/storekit/transaction/unfinished
+  /// A sequence that emits unfinished transactions for the customer.
+  static Future<List<SK2Transaction>> unfinishedTransactions() async {
+    final List<SK2TransactionMessage> msgs = await hostApi2
+        .unfinishedTransactions();
     final List<SK2Transaction> transactions = msgs
         .map((SK2TransactionMessage e) => e.convertFromPigeon())
         .toList();
@@ -89,17 +105,17 @@ class SK2Transaction {
   /// Start listening to transactions.
   /// Call this as soon as you can your app to avoid missing transactions.
   static void startListeningToTransactions() {
-    _hostApi.startListeningToTransactions();
+    hostApi2.startListeningToTransactions();
   }
 
   /// Stop listening to transactions.
   static void stopListeningToTransactions() {
-    _hostApi.stopListeningToTransactions();
+    hostApi2.stopListeningToTransactions();
   }
 
   /// Restore previously completed purchases.
   static Future<void> restorePurchases() async {
-    await _hostApi.restorePurchases();
+    await hostApi2.restorePurchases();
   }
 }
 
@@ -109,19 +125,28 @@ extension on SK2TransactionMessage {
       id: id.toString(),
       originalId: originalId.toString(),
       productId: productId,
-      purchaseDate: purchaseDate,
+      purchaseDate: purchaseDate ?? '',
       expirationDate: expirationDate,
       appAccountToken: appAccountToken,
+      receiptData: receiptData,
       jsonRepresentation: jsonRepresentation,
     );
   }
 
   PurchaseDetails convertToDetails() {
+    // Determine PurchaseStatus based on the status field from native side
+    final PurchaseStatus purchaseStatus = switch (status) {
+      SK2PurchaseStatusMessage.purchased => PurchaseStatus.purchased,
+      SK2PurchaseStatusMessage.pending => PurchaseStatus.pending,
+      SK2PurchaseStatusMessage.cancelled => PurchaseStatus.canceled,
+      SK2PurchaseStatusMessage.restored => PurchaseStatus.restored,
+    };
+
     return SK2PurchaseDetails(
       productID: productId,
       // in SK2, as per Apple
       // https://developer.apple.com/documentation/foundation/nsbundle/1407276-appstorereceipturl
-      // receipt isn’t necessary with SK2 as a Transaction can only be returned
+      // receipt isn't necessary with SK2 as a Transaction can only be returned
       // from validated purchases.
       verificationData: PurchaseVerificationData(
         localVerificationData: jsonRepresentation ?? '',
@@ -130,12 +155,9 @@ extension on SK2TransactionMessage {
         source: kIAPSource,
       ),
       transactionDate: purchaseDate,
-      // Note that with SK2, any transactions that *can* be returned will
-      // require to be finished, and are already purchased.
-      // So set this as purchased for all transactions initially.
-      // Any failed transaction will simply not be returned.
-      status: restoring ? PurchaseStatus.restored : PurchaseStatus.purchased,
-      purchaseID: id.toString(),
+      status: purchaseStatus,
+      purchaseID: id > 0 ? id.toString() : null,
+      appAccountToken: appAccountToken,
     );
   }
 }

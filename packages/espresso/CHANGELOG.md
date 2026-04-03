@@ -1,3 +1,47 @@
+## 0.4.0+24
+
+* Updates build files from Groovy to Kotlin.
+
+## 0.4.0+23
+
+* Removed the unused `io.flutter.network-policy` metadata tag from the README and example application.
+
+## 0.4.0+22
+
+* Updates minimum supported SDK version to Flutter 3.35/Dart 3.9.
+* Updates README to remove usesCleartextTraffic.  Users should use
+  network security configuration instead. 
+
+## 0.4.0+21
+
+* Updates README to reflect currently supported OS version.
+* Bumps `com.squareup.okhttp3:okhttp` from 5.3.1 to 5.3.2.
+
+## 0.4.0+20
+
+* Bumps com.android.tools.build:gradle from 8.12.1 to 8.13.1.
+
+## 0.4.0+19
+
+* Bumps `com.squareup.okhttp3:okhttp` from 5.3.0 to 5.3.1.
+
+## 0.4.0+18
+
+*  Bumps `com.squareup.okhttp3:okhttp` from 5.1.0 to 5.3.0.
+
+## 0.4.0+17
+
+* Resolves Gradle 9 deprecations.
+
+## 0.4.0+16
+
+* Bumps `com.google.guava:guava` from `33.4.8-android` to `33.5.0-android`.
+
+## 0.4.0+15
+
+* Updates Java compatibility version to 17.
+* Updates minimum supported SDK version to Flutter 3.35/Dart 3.9.
+
 ## 0.4.0+14
 
 * Bumps okhttp, junit, and truth dependencies.

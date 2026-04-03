@@ -7,9 +7,8 @@ import 'package:pigeon/pigeon.dart';
 @ConfigurePigeon(
   PigeonOptions(
     dartOut: 'lib/src/sk2_pigeon.g.dart',
-    dartTestOut: 'test/sk2_test_api.g.dart',
     swiftOut:
-        'darwin/in_app_purchase_storekit/Sources/in_app_purchase_storekit/StoreKit2/sk2_pigeon.g.swift',
+        'darwin/in_app_purchase_storekit/Sources/in_app_purchase_storekit/StoreKit2/StoreKit2Messages.g.swift',
     copyrightHeader: 'pigeons/copyright.txt',
   ),
 )
@@ -175,26 +174,29 @@ class SK2TransactionMessage {
     required this.id,
     required this.originalId,
     required this.productId,
-    required this.purchaseDate,
+    this.purchaseDate,
     this.expirationDate,
     this.purchasedQuantity = 1,
     this.appAccountToken,
     this.error,
     this.receiptData,
     this.jsonRepresentation,
-    this.restoring = false,
+    required this.status,
   });
   final int id;
   final int originalId;
   final String productId;
-  final String purchaseDate;
+  final String? purchaseDate;
   final String? expirationDate;
   final int purchasedQuantity;
   final String? appAccountToken;
-  final bool restoring;
   final String? receiptData;
   final SK2ErrorMessage? error;
   final String? jsonRepresentation;
+
+  /// The status of this purchase transaction.
+  /// Set by native side to communicate the result state to Dart layer.
+  final SK2PurchaseStatusMessage status;
 }
 
 class SK2ErrorMessage {
@@ -209,9 +211,30 @@ class SK2ErrorMessage {
   final Map<String, Object>? userInfo;
 }
 
-enum SK2ProductPurchaseResultMessage { success, userCancelled, pending }
+enum SK2ProductPurchaseResultMessage {
+  success,
+  unverified,
+  userCancelled,
+  pending,
+}
 
-@HostApi(dartHostTestHandler: 'TestInAppPurchase2Api')
+/// The status of a purchase transaction.
+/// Used to communicate the result state to Dart layer via purchaseStream.
+enum SK2PurchaseStatusMessage {
+  /// Purchase completed successfully.
+  purchased,
+
+  /// Purchase is pending (e.g., Ask to Buy).
+  pending,
+
+  /// Purchase was cancelled by the user.
+  cancelled,
+
+  /// Purchase was restored.
+  restored,
+}
+
+@HostApi()
 abstract class InAppPurchase2API {
   // https://developer.apple.com/documentation/storekit/appstore/3822277-canmakepayments
   bool canMakePayments();
@@ -235,6 +258,9 @@ abstract class InAppPurchase2API {
 
   @async
   List<SK2TransactionMessage> transactions();
+
+  @async
+  List<SK2TransactionMessage> unfinishedTransactions();
 
   @async
   void finish(int id);

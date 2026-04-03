@@ -22,7 +22,7 @@ const CameraPosition kInitialCameraPosition = CameraPosition(
 );
 
 // Dummy map ID
-const String kCloudMapId = '000000000000000'; // Dummy map ID.
+const String kMapId = '000000000000000'; // Dummy map ID.
 
 /// True if the test is running in an iOS device
 final bool isIOS = defaultTargetPlatform == TargetPlatform.iOS;
@@ -50,7 +50,9 @@ Future<void> pumpMap(
 Widget wrapMap(GoogleMap map, [Size size = const Size.square(200)]) {
   return MaterialApp(
     home: Scaffold(
-      body: Center(child: SizedBox.fromSize(size: size, child: map)),
+      body: Center(
+        child: SizedBox.fromSize(size: size, child: map),
+      ),
     ),
   );
 }

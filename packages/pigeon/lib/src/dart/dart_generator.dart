@@ -49,7 +49,8 @@ class DartOptions {
     this.copyrightHeader,
     this.sourceOutPath,
     this.testOutPath,
-  });
+    bool ignoreLints = true,
+  }) : _ignoreLints = ignoreLints;
 
   /// A copyright header that will get prepended to generated code.
   final Iterable<String>? copyrightHeader;
@@ -60,25 +61,29 @@ class DartOptions {
   /// Path to output generated Test file for tests.
   final String? testOutPath;
 
+  /// Whether to ignore lint violations in generated Dart code.
+  final bool _ignoreLints;
+
   /// Creates a [DartOptions] from a Map representation where:
   /// `x = DartOptions.fromMap(x.toMap())`.
   static DartOptions fromMap(Map<String, Object> map) {
-    final Iterable<dynamic>? copyrightHeader =
-        map['copyrightHeader'] as Iterable<dynamic>?;
+    final copyrightHeader = map['copyrightHeader'] as Iterable<dynamic>?;
     return DartOptions(
       copyrightHeader: copyrightHeader?.cast<String>(),
       sourceOutPath: map['sourceOutPath'] as String?,
       testOutPath: map['testOutPath'] as String?,
+      ignoreLints: (map['ignoreLints'] as bool?) ?? true,
     );
   }
 
   /// Converts a [DartOptions] to a Map representation where:
   /// `x = DartOptions.fromMap(x.toMap())`.
   Map<String, Object> toMap() {
-    final Map<String, Object> result = <String, Object>{
+    final result = <String, Object>{
       if (copyrightHeader != null) 'copyrightHeader': copyrightHeader!,
       if (sourceOutPath != null) 'sourceOutPath': sourceOutPath!,
       if (testOutPath != null) 'testOutPath': testOutPath!,
+      'ignoreLints': _ignoreLints,
     };
     return result;
   }
@@ -93,7 +98,12 @@ class DartOptions {
 /// Options that control how Dart code will be generated.
 class InternalDartOptions extends InternalOptions {
   /// Constructor for InternalDartOptions.
-  const InternalDartOptions({this.copyrightHeader, this.dartOut, this.testOut});
+  const InternalDartOptions({
+    this.copyrightHeader,
+    this.dartOut,
+    this.testOut,
+    required bool ignoreLints,
+  }) : _ignoreLints = ignoreLints;
 
   /// Creates InternalDartOptions from DartOptions.
   InternalDartOptions.fromDartOptions(
@@ -103,7 +113,8 @@ class InternalDartOptions extends InternalOptions {
     String? testOut,
   }) : copyrightHeader = copyrightHeader ?? options.copyrightHeader,
        dartOut = (dartOut ?? options.sourceOutPath)!,
-       testOut = testOut ?? options.testOutPath;
+       testOut = testOut ?? options.testOutPath,
+       _ignoreLints = options._ignoreLints;
 
   /// A copyright header that will get prepended to generated code.
   final Iterable<String>? copyrightHeader;
@@ -113,6 +124,9 @@ class InternalDartOptions extends InternalOptions {
 
   /// Path to output generated Test file for tests.
   final String? testOut;
+
+  /// Whether to ignore lint violations in generated Dart code.
+  final bool _ignoreLints;
 }
 
 /// Class that manages all Dart code generation.
@@ -137,9 +151,18 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
     }
     indent.writeln('// ${getGeneratedCodeWarning()}');
     indent.writeln('// $seeAlsoWarning');
-    indent.writeln(
-      '// ignore_for_file: public_member_api_docs, non_constant_identifier_names, avoid_as, unused_import, unnecessary_parenthesis, prefer_null_aware_operators, omit_local_variable_types, unused_shown_name, unnecessary_import, no_leading_underscores_for_local_identifiers',
-    );
+    indent.writeln('// ignore_for_file: unused_import, unused_shown_name');
+    if (generatorOptions._ignoreLints) {
+      indent.writeln('// ignore_for_file: type=lint');
+    } else {
+      // Just ignore the lint rules we know we violate and which we care about
+      // in our own checked-in generated files.
+      indent.writeln(
+        '// ignore_for_file: public_member_api_docs, '
+        'non_constant_identifier_names, avoid_as, omit_local_variable_types, '
+        'omit_obvious_local_variable_types',
+      );
+    }
     indent.newln();
   }
 
@@ -155,19 +178,19 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
       indent.writeln("import 'dart:io' show Platform;");
     }
     indent.writeln(
-      "import 'dart:typed_data' show Float64List, Int32List, Int64List, Uint8List;",
+      "import 'dart:typed_data' show Float64List, Int32List, Int64List;",
     );
     indent.newln();
 
-    indent.writeln(
-      "import 'package:flutter/foundation.dart' show ReadBuffer, WriteBuffer${root.containsProxyApi ? ', immutable, protected, visibleForTesting' : ''};",
-    );
     indent.writeln("import 'package:flutter/services.dart';");
     if (root.containsProxyApi) {
       indent.writeln(
         "import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;",
       );
     }
+    indent.writeln(
+      "import 'package:meta/meta.dart' show immutable, protected, visibleForTesting;",
+    );
   }
 
   @override
@@ -211,11 +234,10 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
       classDefinition.documentationComments,
       docCommentSpec,
     );
-    final String sealed = classDefinition.isSealed ? 'sealed ' : '';
-    final String implements =
-        classDefinition.superClassName != null
-            ? 'extends ${classDefinition.superClassName} '
-            : '';
+    final sealed = classDefinition.isSealed ? 'sealed ' : '';
+    final implements = classDefinition.superClassName != null
+        ? 'extends ${classDefinition.superClassName} '
+        : '';
 
     indent.write('${sealed}class ${classDefinition.name} $implements');
     indent.addScoped('{', '}', () {
@@ -233,7 +255,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
           docCommentSpec,
         );
 
-        final String datatype = addGenericTypesNullable(field.type);
+        final String datatype = addGenericTypes(field.type);
         indent.writeln('$datatype ${field.name};');
         indent.newln();
       }
@@ -271,12 +293,12 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
       for (final NamedType field in getFieldsInSerializationOrder(
         classDefinition,
       )) {
-        final String required =
-            !field.type.isNullable && field.defaultValue == null
-                ? 'required '
-                : '';
-        final String defaultValueString =
-            field.defaultValue == null ? '' : ' = ${field.defaultValue}';
+        final required = !field.type.isNullable && field.defaultValue == null
+            ? 'required '
+            : '';
+        final defaultValueString = field.defaultValue == null
+            ? ''
+            : ' = ${field.defaultValue}';
         indent.writeln('${required}this.${field.name}$defaultValueString,');
       }
     });
@@ -316,25 +338,6 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
     Class classDefinition, {
     required String dartPackageName,
   }) {
-    void writeValueDecode(NamedType field, int index) {
-      final String resultAt = 'result[$index]';
-      final String castCallPrefix = field.type.isNullable ? '?' : '!';
-      final String genericType = _makeGenericTypeArguments(field.type);
-      final String castCall = _makeGenericCastCall(field.type);
-      final String nullableTag = field.type.isNullable ? '?' : '';
-      if (field.type.typeArguments.isNotEmpty) {
-        indent.add('($resultAt as $genericType?)$castCallPrefix$castCall');
-      } else {
-        final String castCallForcePrefix = field.type.isNullable ? '' : '!';
-        final String castString =
-            field.type.baseName == 'Object'
-                ? ''
-                : ' as $genericType$nullableTag';
-
-        indent.add('$resultAt$castCallForcePrefix$castString');
-      }
-    }
-
     indent.write('static ${classDefinition.name} decode(Object result) ');
     indent.addScoped('{', '}', () {
       indent.writeln('result as List<Object?>;');
@@ -345,7 +348,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
           final NamedType field,
         ) {
           indent.write('${field.name}: ');
-          writeValueDecode(field, index);
+          indent.add(_castValue('result[$index]', field.type));
           indent.addln(',');
         });
       });
@@ -360,6 +363,9 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
     Class classDefinition, {
     required String dartPackageName,
   }) {
+    final Iterable<NamedType> fields = getFieldsInSerializationOrder(
+      classDefinition,
+    );
     indent.writeln('@override');
     indent.writeln('// ignore: avoid_equals_and_hash_code_on_mutable_classes');
     indent.writeScoped('bool operator ==(Object other) {', '}', () {
@@ -370,16 +376,28 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
           indent.writeln('return false;');
         },
       );
-      indent.writeScoped('if (identical(this, other)) {', '}', () {
+      if (fields.isEmpty) {
         indent.writeln('return true;');
-      });
-      indent.writeln('return _deepEquals(encode(), other.encode());');
+      } else {
+        indent.writeScoped('if (identical(this, other)) {', '}', () {
+          indent.writeln('return true;');
+        });
+        final String comparisons = fields
+            .map(
+              (NamedType field) =>
+                  '_deepEquals(${field.name}, other.${field.name})',
+            )
+            .join(' && ');
+        indent.writeln('return $comparisons;');
+      }
     });
+
     indent.newln();
     indent.writeln('@override');
     indent.writeln('// ignore: avoid_equals_and_hash_code_on_mutable_classes');
-    indent.writeln('int get hashCode => Object.hashAll(_toList())');
-    indent.addln(';');
+    indent.writeln(
+      'int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);',
+    );
   }
 
   @override
@@ -404,10 +422,9 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
             indent.writeln('writeValue(buffer, value.index);');
           }
         } else {
-          final String encodeString =
-              customType.type == CustomTypes.customClass
-                  ? '.encode()'
-                  : '.index';
+          final encodeString = customType.type == CustomTypes.customClass
+              ? '.encode()'
+              : '.index';
           indent.writeln(
             'final $_overflowClassName wrap = $_overflowClassName(type: ${customType.offset(nonSerializedClassCount) - maximumCodecFieldKey}, wrapped: value$encodeString);',
           );
@@ -421,7 +438,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
       EnumeratedType customType,
       int nonSerializedClassCount,
     ) {
-      indent.writeln('case ${customType.offset(nonSerializedClassCount)}: ');
+      indent.writeln('case ${customType.offset(nonSerializedClassCount)}:');
       indent.nest(1, () {
         if (customType.type == CustomTypes.customClass) {
           if (customType.offset(nonSerializedClassCount) ==
@@ -436,7 +453,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
             );
           }
         } else if (customType.type == CustomTypes.customEnum) {
-          indent.writeln('final int? value = readValue(buffer) as int?;');
+          indent.writeln('final value = readValue(buffer) as int?;');
           indent.writeln(
             'return value == null ? null : ${customType.name}.values[value];',
           );
@@ -444,15 +461,17 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
       });
     }
 
-    final EnumeratedType overflowClass = EnumeratedType(
+    final overflowClass = EnumeratedType(
       _overflowClassName,
       maximumCodecFieldKey,
       CustomTypes.customClass,
     );
 
     indent.newln();
-    final List<EnumeratedType> enumeratedTypes =
-        getEnumeratedTypes(root, excludeSealedClasses: true).toList();
+    final List<EnumeratedType> enumeratedTypes = getEnumeratedTypes(
+      root,
+      excludeSealedClasses: true,
+    ).toList();
     if (root.requiresOverflowClass) {
       _writeCodecOverflowUtilities(indent, enumeratedTypes);
     }
@@ -467,7 +486,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
           indent.writeln('buffer.putUint8(4);');
           indent.writeln('buffer.putInt64(value);');
         }, addTrailingNewline: false);
-        int nonSerializedClassCount = 0;
+        var nonSerializedClassCount = 0;
         enumerate(enumeratedTypes, (
           int index,
           final EnumeratedType customType,
@@ -488,8 +507,8 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
       indent.addScoped('{', '}', () {
         indent.write('switch (type) ');
         indent.addScoped('{', '}', () {
-          int nonSerializedClassCount = 0;
-          for (final EnumeratedType customType in enumeratedTypes) {
+          var nonSerializedClassCount = 0;
+          for (final customType in enumeratedTypes) {
             if (customType.associatedClass?.isSealed ?? false) {
               nonSerializedClassCount++;
             } else if (customType.offset(nonSerializedClassCount) <
@@ -517,6 +536,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
 
   /// Writes the code for host [Api], [api].
   /// Example:
+  /// ```dart
   /// class FooCodec extends StandardMessageCodec {...}
   ///
   /// abstract class Foo {
@@ -524,6 +544,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
   ///   int add(int x, int y);
   ///   static void setUp(Foo api, {BinaryMessenger? binaryMessenger}) {...}
   /// }
+  /// ```
   @override
   void writeFlutterApi(
     InternalDartOptions generatorOptions,
@@ -556,10 +577,9 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
         );
 
         final bool isAsync = func.isAsynchronous;
-        final String returnType =
-            isAsync
-                ? 'Future<${addGenericTypesNullable(func.returnType)}>'
-                : addGenericTypesNullable(func.returnType);
+        final String returnType = isAsync
+            ? 'Future<${addGenericTypes(func.returnType)}>'
+            : addGenericTypes(func.returnType);
         final String argSignature = _getMethodParameterSignature(
           func.parameters,
         );
@@ -581,10 +601,9 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
             parameters: func.parameters,
             returnType: func.returnType,
             addSuffixVariable: true,
-            channelName:
-                channelNameFunc == null
-                    ? makeChannelName(api, func, dartPackageName)
-                    : channelNameFunc(func),
+            channelName: channelNameFunc == null
+                ? makeChannelName(api, func, dartPackageName)
+                : channelNameFunc(func),
             isMockHandler: isMockHandler,
             isAsynchronous: func.isAsynchronous,
           );
@@ -595,6 +614,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
 
   /// Writes the code for host [Api], [api].
   /// Example:
+  /// ```dart
   /// class FooCodec extends StandardMessageCodec {...}
   ///
   /// class Foo {
@@ -602,6 +622,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
   ///   static const MessageCodec<Object?> codec = FooCodec();
   ///   Future<int> add(int x, int y) async {...}
   /// }
+  /// ```
   ///
   /// Messages will be sent and received in a list.
   ///
@@ -619,7 +640,7 @@ class DartGenerator extends StructuredGenerator<InternalDartOptions> {
     required String dartPackageName,
   }) {
     indent.newln();
-    bool first = true;
+    var first = true;
     addDocumentationComments(indent, api.documentationComments, docCommentSpec);
     indent.write('class ${api.name} ');
     indent.addScoped('{', '}', () {
@@ -709,182 +730,177 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     Indent indent, {
     required String dartPackageName,
   }) {
-    final cb.Parameter binaryMessengerParameter = cb.Parameter(
-      (cb.ParameterBuilder builder) =>
-          builder
-            ..name = 'binaryMessenger'
-            ..type = cb.refer('BinaryMessenger?')
-            ..named = true,
+    final binaryMessengerParameter = cb.Parameter(
+      (cb.ParameterBuilder builder) => builder
+        ..name = 'binaryMessenger'
+        ..type = cb.refer('BinaryMessenger?')
+        ..named = true,
     );
 
-    final cb.Field binaryMessengerField = cb.Field(
-      (cb.FieldBuilder builder) =>
-          builder
-            ..name = '${varNamePrefix}binaryMessenger'
-            ..type = cb.refer('BinaryMessenger?')
-            ..modifier = cb.FieldModifier.final$,
+    final binaryMessengerField = cb.Field(
+      (cb.FieldBuilder builder) => builder
+        ..name = '${varNamePrefix}binaryMessenger'
+        ..type = cb.refer('BinaryMessenger?')
+        ..modifier = cb.FieldModifier.final$,
     );
 
-    final cb.Class instanceManagerApi = cb.Class(
-      (cb.ClassBuilder builder) =>
-          builder
-            ..name = dartInstanceManagerApiClassName
-            ..docs.add(
-              '/// Generated API for managing the Dart and native `$dartInstanceManagerClassName`s.',
-            )
-            ..constructors.add(
-              cb.Constructor((cb.ConstructorBuilder builder) {
-                builder
-                  ..docs.add(
-                    '/// Constructor for [$dartInstanceManagerApiClassName].',
-                  )
-                  ..optionalParameters.add(binaryMessengerParameter)
-                  ..initializers.add(
-                    cb.Code(
-                      '${binaryMessengerField.name} = ${binaryMessengerParameter.name}',
-                    ),
-                  );
-              }),
-            )
-            ..fields.addAll(<cb.Field>[
-              binaryMessengerField,
-              cb.Field((cb.FieldBuilder builder) {
-                builder
-                  ..name = pigeonChannelCodec
-                  ..type = cb.refer('MessageCodec<Object?>')
-                  ..static = true
-                  ..modifier = cb.FieldModifier.constant
-                  ..assignment = const cb.Code('$_pigeonMessageCodec()');
-              }),
-            ])
-            ..methods.add(
-              cb.Method((cb.MethodBuilder builder) {
-                builder
-                  ..name = 'setUpMessageHandlers'
-                  ..static = true
-                  ..returns = cb.refer('void')
-                  ..optionalParameters.addAll(<cb.Parameter>[
-                    cb.Parameter(
-                      (cb.ParameterBuilder builder) =>
-                          builder
-                            ..name = '${classMemberNamePrefix}clearHandlers'
-                            ..type = cb.refer('bool')
-                            ..named = true
-                            ..defaultTo = const cb.Code('false'),
-                    ),
-                    binaryMessengerParameter,
-                    cb.Parameter(
-                      (cb.ParameterBuilder builder) =>
-                          builder
-                            ..name = 'instanceManager'
-                            ..named = true
-                            ..type = cb.refer('$dartInstanceManagerClassName?'),
-                    ),
-                  ])
-                  ..body = cb.Block.of(
-                    cb.Block((cb.BlockBuilder builder) {
-                      final StringBuffer messageHandlerSink = StringBuffer();
-                      writeFlutterMethodMessageHandler(
-                        Indent(messageHandlerSink),
-                        name: 'removeStrongReferenceName',
-                        parameters: <Parameter>[
-                          Parameter(
-                            name: 'identifier',
-                            type: const TypeDeclaration(
-                              baseName: 'int',
-                              isNullable: false,
-                            ),
-                          ),
-                        ],
-                        returnType: const TypeDeclaration.voidDeclaration(),
-                        channelName: makeRemoveStrongReferenceChannelName(
-                          dartPackageName,
+    final instanceManagerApi = cb.Class(
+      (cb.ClassBuilder builder) => builder
+        ..name = dartInstanceManagerApiClassName
+        ..docs.add(
+          '/// Generated API for managing the Dart and native `$dartInstanceManagerClassName`s.',
+        )
+        ..constructors.add(
+          cb.Constructor((cb.ConstructorBuilder builder) {
+            builder
+              ..docs.add(
+                '/// Constructor for [$dartInstanceManagerApiClassName].',
+              )
+              ..optionalParameters.add(binaryMessengerParameter)
+              ..initializers.add(
+                cb.Code(
+                  '${binaryMessengerField.name} = ${binaryMessengerParameter.name}',
+                ),
+              );
+          }),
+        )
+        ..fields.addAll(<cb.Field>[
+          binaryMessengerField,
+          cb.Field((cb.FieldBuilder builder) {
+            builder
+              ..name = pigeonChannelCodec
+              ..type = cb.refer('MessageCodec<Object?>')
+              ..static = true
+              ..modifier = cb.FieldModifier.constant
+              ..assignment = const cb.Code('$_pigeonMessageCodec()');
+          }),
+        ])
+        ..methods.add(
+          cb.Method((cb.MethodBuilder builder) {
+            builder
+              ..name = 'setUpMessageHandlers'
+              ..static = true
+              ..returns = cb.refer('void')
+              ..optionalParameters.addAll(<cb.Parameter>[
+                cb.Parameter(
+                  (cb.ParameterBuilder builder) => builder
+                    ..name = '${classMemberNamePrefix}clearHandlers'
+                    ..type = cb.refer('bool')
+                    ..named = true
+                    ..defaultTo = const cb.Code('false'),
+                ),
+                binaryMessengerParameter,
+                cb.Parameter(
+                  (cb.ParameterBuilder builder) => builder
+                    ..name = 'instanceManager'
+                    ..named = true
+                    ..type = cb.refer('$dartInstanceManagerClassName?'),
+                ),
+              ])
+              ..body = cb.Block.of(
+                cb.Block((cb.BlockBuilder builder) {
+                  final messageHandlerIndent = Indent();
+                  writeFlutterMethodMessageHandler(
+                    messageHandlerIndent,
+                    name: 'removeStrongReferenceName',
+                    parameters: <Parameter>[
+                      Parameter(
+                        name: 'identifier',
+                        type: const TypeDeclaration(
+                          baseName: 'int',
+                          isNullable: false,
                         ),
-                        isMockHandler: false,
-                        isAsynchronous: false,
-                        nullHandlerExpression:
-                            '${classMemberNamePrefix}clearHandlers',
-                        onCreateApiCall: (
+                      ),
+                    ],
+                    returnType: const TypeDeclaration.voidDeclaration(),
+                    channelName: makeRemoveStrongReferenceChannelName(
+                      dartPackageName,
+                    ),
+                    isMockHandler: false,
+                    isAsynchronous: false,
+                    nullHandlerExpression:
+                        '${classMemberNamePrefix}clearHandlers',
+                    onCreateApiCall:
+                        (
                           String methodName,
                           Iterable<Parameter> parameters,
                           Iterable<String> safeArgumentNames,
                         ) {
                           return '(instanceManager ?? $dartInstanceManagerClassName.instance).remove(${safeArgumentNames.single})';
                         },
-                      );
-                      builder.statements.add(
-                        cb.Code(messageHandlerSink.toString()),
-                      );
-                    }).statements,
                   );
-              }),
-            )
-            ..methods.addAll(<cb.Method>[
-              cb.Method((cb.MethodBuilder builder) {
-                builder
-                  ..name = 'removeStrongReference'
-                  ..returns = cb.refer('Future<void>')
-                  ..modifier = cb.MethodModifier.async
-                  ..requiredParameters.add(
-                    cb.Parameter(
-                      (cb.ParameterBuilder builder) =>
-                          builder
-                            ..name = 'identifier'
-                            ..type = cb.refer('int'),
-                    ),
-                  )
-                  ..body = cb.Block((cb.BlockBuilder builder) {
-                    final StringBuffer messageCallSink = StringBuffer();
-                    writeHostMethodMessageCall(
-                      Indent(messageCallSink),
-                      addSuffixVariable: false,
-                      channelName: makeRemoveStrongReferenceChannelName(
-                        dartPackageName,
+                  builder.statements.add(
+                    cb.Code(messageHandlerIndent.toString()),
+                  );
+                }).statements,
+              );
+          }),
+        )
+        ..methods.addAll(<cb.Method>[
+          cb.Method((cb.MethodBuilder builder) {
+            builder
+              ..name = 'removeStrongReference'
+              ..returns = cb.refer('Future<void>')
+              ..modifier = cb.MethodModifier.async
+              ..requiredParameters.add(
+                cb.Parameter(
+                  (cb.ParameterBuilder builder) => builder
+                    ..name = 'identifier'
+                    ..type = cb.refer('int'),
+                ),
+              )
+              ..body = cb.Block((cb.BlockBuilder builder) {
+                final messageCallIndent = Indent();
+                writeHostMethodMessageCall(
+                  messageCallIndent,
+                  addSuffixVariable: false,
+                  channelName: makeRemoveStrongReferenceChannelName(
+                    dartPackageName,
+                  ),
+                  parameters: <Parameter>[
+                    Parameter(
+                      name: 'identifier',
+                      type: const TypeDeclaration(
+                        baseName: 'int',
+                        isNullable: false,
                       ),
-                      parameters: <Parameter>[
-                        Parameter(
-                          name: 'identifier',
-                          type: const TypeDeclaration(
-                            baseName: 'int',
-                            isNullable: false,
-                          ),
-                        ),
-                      ],
-                      returnType: const TypeDeclaration.voidDeclaration(),
-                    );
-                    builder.statements.addAll(<cb.Code>[
-                      cb.Code(messageCallSink.toString()),
-                    ]);
-                  });
-              }),
-              cb.Method((cb.MethodBuilder builder) {
-                builder
-                  ..name = 'clear'
-                  ..returns = cb.refer('Future<void>')
-                  ..modifier = cb.MethodModifier.async
-                  ..docs.addAll(<String>[
-                    '/// Clear the native `$dartInstanceManagerClassName`.',
-                    '///',
-                    '/// This is typically called after a hot restart.',
-                  ])
-                  ..body = cb.Block((cb.BlockBuilder builder) {
-                    final StringBuffer messageCallSink = StringBuffer();
-                    writeHostMethodMessageCall(
-                      Indent(messageCallSink),
-                      addSuffixVariable: false,
-                      channelName: makeClearChannelName(dartPackageName),
-                      parameters: <Parameter>[],
-                      returnType: const TypeDeclaration.voidDeclaration(),
-                    );
-                    builder.statements.addAll(<cb.Code>[
-                      cb.Code(messageCallSink.toString()),
-                    ]);
-                  });
-              }),
-            ]),
+                    ),
+                  ],
+                  returnType: const TypeDeclaration.voidDeclaration(),
+                );
+                builder.statements.addAll(<cb.Code>[
+                  cb.Code(messageCallIndent.toString()),
+                ]);
+              });
+          }),
+          cb.Method((cb.MethodBuilder builder) {
+            builder
+              ..name = 'clear'
+              ..returns = cb.refer('Future<void>')
+              ..modifier = cb.MethodModifier.async
+              ..docs.addAll(<String>[
+                '/// Clear the native `$dartInstanceManagerClassName`.',
+                '///',
+                '/// This is typically called after a hot restart.',
+              ])
+              ..body = cb.Block((cb.BlockBuilder builder) {
+                final messageCallIndent = Indent();
+                writeHostMethodMessageCall(
+                  messageCallIndent,
+                  addSuffixVariable: false,
+                  channelName: makeClearChannelName(dartPackageName),
+                  parameters: <Parameter>[],
+                  returnType: const TypeDeclaration.voidDeclaration(),
+                );
+                builder.statements.addAll(<cb.Code>[
+                  cb.Code(messageCallIndent.toString()),
+                ]);
+              });
+          }),
+        ]),
     );
 
-    final cb.DartEmitter emitter = cb.DartEmitter(useNullSafetySyntax: true);
+    final emitter = cb.DartEmitter(useNullSafetySyntax: true);
     indent.format(
       DartFormatter(
         languageVersion: Version(3, 6, 0),
@@ -909,130 +925,121 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     AstProxyApi api, {
     required String dartPackageName,
   }) {
-    const String codecName = '_${classNamePrefix}ProxyApiBaseCodec';
+    const codecName = '_${classNamePrefix}ProxyApiBaseCodec';
 
     // Each API has a private codec instance used by every host method,
     // constructor, or non-static field.
-    final String codecInstanceName = '_${varNamePrefix}codec${api.name}';
+    final codecInstanceName = '_${varNamePrefix}codec${api.name}';
 
     // AST class used by code_builder to generate the code.
-    final cb.Class proxyApi = cb.Class(
-      (cb.ClassBuilder builder) =>
-          builder
-            ..name = api.name
-            ..extend =
-                api.superClass != null
-                    ? cb.refer(api.superClass!.baseName)
-                    : cb.refer(proxyApiBaseClassName)
-            ..implements.addAll(
-              api.interfaces.map(
-                (TypeDeclaration type) => cb.refer(type.baseName),
-              ),
-            )
-            ..docs.addAll(
-              asDocumentationComments(
-                api.documentationComments,
-                docCommentSpec,
-              ),
-            )
-            ..constructors.addAll(
-              proxy_api_helper.constructors(
-                api.constructors,
-                apiName: api.name,
-                dartPackageName: dartPackageName,
-                codecName: codecName,
-                codecInstanceName: codecInstanceName,
-                superClassApi: api.superClass?.associatedProxyApi,
-                unattachedFields: api.unattachedFields,
-                flutterMethodsFromSuperClasses:
-                    api.flutterMethodsFromSuperClassesWithApis(),
-                flutterMethodsFromInterfaces:
-                    api.flutterMethodsFromInterfacesWithApis(),
-                declaredFlutterMethods: api.flutterMethods,
-              ),
-            )
-            ..constructors.add(
-              proxy_api_helper.detachedConstructor(
-                apiName: api.name,
-                superClassApi: api.superClass?.associatedProxyApi,
-                unattachedFields: api.unattachedFields,
-                flutterMethodsFromSuperClasses:
-                    api.flutterMethodsFromSuperClassesWithApis(),
-                flutterMethodsFromInterfaces:
-                    api.flutterMethodsFromInterfacesWithApis(),
-                declaredFlutterMethods: api.flutterMethods,
-              ),
-            )
-            ..fields.addAll(<cb.Field>[
-              if (api.constructors.isNotEmpty ||
-                  api.attachedFields.any((ApiField field) => !field.isStatic) ||
-                  api.hostMethods.isNotEmpty)
-                proxy_api_helper.codecInstanceField(
-                  codecInstanceName: codecInstanceName,
-                  codecName: codecName,
-                ),
-            ])
-            ..fields.addAll(
-              proxy_api_helper.unattachedFields(api.unattachedFields),
-            )
-            ..fields.addAll(
-              proxy_api_helper.flutterMethodFields(
-                api.flutterMethods,
-                apiName: api.name,
-              ),
-            )
-            ..fields.addAll(
-              proxy_api_helper.interfaceApiFields(api.apisOfInterfaces()),
-            )
-            ..fields.addAll(proxy_api_helper.attachedFields(api.attachedFields))
-            ..methods.addAll(
-              proxy_api_helper.staticAttachedFieldsGetters(
-                api.attachedFields.where((ApiField field) => field.isStatic),
-                apiName: api.name,
-              ),
-            )
-            ..methods.add(
-              proxy_api_helper.setUpMessageHandlerMethod(
-                flutterMethods: api.flutterMethods,
-                apiName: api.name,
-                dartPackageName: dartPackageName,
-                codecName: codecName,
-                unattachedFields: api.unattachedFields,
-                hasCallbackConstructor: api.hasCallbackConstructor(),
-              ),
-            )
-            ..methods.addAll(
-              proxy_api_helper.attachedFieldMethods(
-                api.attachedFields,
-                apiName: api.name,
-                dartPackageName: dartPackageName,
-                codecInstanceName: codecInstanceName,
-                codecName: codecName,
-              ),
-            )
-            ..methods.addAll(
-              proxy_api_helper.hostMethods(
-                api.hostMethods,
-                apiName: api.name,
-                dartPackageName: dartPackageName,
-                codecInstanceName: codecInstanceName,
-                codecName: codecName,
-              ),
-            )
-            ..methods.add(
-              proxy_api_helper.copyMethod(
-                apiName: api.name,
-                unattachedFields: api.unattachedFields,
-                flutterMethodsFromSuperClasses:
-                    api.flutterMethodsFromSuperClassesWithApis(),
-                flutterMethodsFromInterfaces:
-                    api.flutterMethodsFromInterfacesWithApis(),
-                declaredFlutterMethods: api.flutterMethods,
-              ),
+    final proxyApi = cb.Class(
+      (cb.ClassBuilder builder) => builder
+        ..name = api.name
+        ..extend = api.superClass != null
+            ? cb.refer(api.superClass!.baseName)
+            : cb.refer(proxyApiBaseClassName)
+        ..implements.addAll(
+          api.interfaces.map((TypeDeclaration type) => cb.refer(type.baseName)),
+        )
+        ..docs.addAll(
+          asDocumentationComments(api.documentationComments, docCommentSpec),
+        )
+        ..constructors.addAll(
+          proxy_api_helper.constructors(
+            api.constructors,
+            apiName: api.name,
+            dartPackageName: dartPackageName,
+            codecName: codecName,
+            codecInstanceName: codecInstanceName,
+            superClassApi: api.superClass?.associatedProxyApi,
+            unattachedFields: api.unattachedFields,
+            flutterMethodsFromSuperClasses: api
+                .flutterMethodsFromSuperClassesWithApis(),
+            flutterMethodsFromInterfaces: api
+                .flutterMethodsFromInterfacesWithApis(),
+            declaredFlutterMethods: api.flutterMethods,
+          ),
+        )
+        ..constructors.add(
+          proxy_api_helper.detachedConstructor(
+            apiName: api.name,
+            superClassApi: api.superClass?.associatedProxyApi,
+            unattachedFields: api.unattachedFields,
+            flutterMethodsFromSuperClasses: api
+                .flutterMethodsFromSuperClassesWithApis(),
+            flutterMethodsFromInterfaces: api
+                .flutterMethodsFromInterfacesWithApis(),
+            declaredFlutterMethods: api.flutterMethods,
+          ),
+        )
+        ..fields.addAll(<cb.Field>[
+          if (api.constructors.isNotEmpty ||
+              api.attachedFields.any((ApiField field) => !field.isStatic) ||
+              api.hostMethods.isNotEmpty)
+            proxy_api_helper.codecInstanceField(
+              codecInstanceName: codecInstanceName,
+              codecName: codecName,
             ),
+        ])
+        ..fields.addAll(proxy_api_helper.unattachedFields(api.unattachedFields))
+        ..fields.addAll(
+          proxy_api_helper.flutterMethodFields(
+            api.flutterMethods,
+            apiName: api.name,
+          ),
+        )
+        ..fields.addAll(
+          proxy_api_helper.interfaceApiFields(api.apisOfInterfaces()),
+        )
+        ..fields.addAll(proxy_api_helper.attachedFields(api.attachedFields))
+        ..methods.addAll(
+          proxy_api_helper.staticAttachedFieldsGetters(
+            api.attachedFields.where((ApiField field) => field.isStatic),
+            apiName: api.name,
+          ),
+        )
+        ..methods.add(
+          proxy_api_helper.setUpMessageHandlerMethod(
+            flutterMethods: api.flutterMethods,
+            apiName: api.name,
+            dartPackageName: dartPackageName,
+            codecName: codecName,
+            unattachedFields: api.unattachedFields,
+            hasCallbackConstructor: api.hasCallbackConstructor(),
+          ),
+        )
+        ..methods.addAll(
+          proxy_api_helper.attachedFieldMethods(
+            api.attachedFields,
+            apiName: api.name,
+            dartPackageName: dartPackageName,
+            codecInstanceName: codecInstanceName,
+            codecName: codecName,
+          ),
+        )
+        ..methods.addAll(
+          proxy_api_helper.hostMethods(
+            api.hostMethods,
+            apiName: api.name,
+            dartPackageName: dartPackageName,
+            codecInstanceName: codecInstanceName,
+            codecName: codecName,
+          ),
+        )
+        ..methods.add(
+          proxy_api_helper.copyMethod(
+            apiName: api.name,
+            unattachedFields: api.unattachedFields,
+            flutterMethodsFromSuperClasses: api
+                .flutterMethodsFromSuperClassesWithApis(),
+            flutterMethodsFromInterfaces: api
+                .flutterMethodsFromInterfacesWithApis(),
+            declaredFlutterMethods: api.flutterMethods,
+          ),
+        ),
     );
 
-    final cb.DartEmitter emitter = cb.DartEmitter(useNullSafetySyntax: true);
+    final emitter = cb.DartEmitter(useNullSafetySyntax: true);
     indent.format(_formatter.format('${proxyApi.accept(emitter)}'));
   }
 
@@ -1047,17 +1054,16 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     required String dartPackageName,
     required String dartOutputPackageName,
   }) {
-    final Indent indent = Indent(sink);
+    final indent = Indent();
     final String sourceOutPath = generatorOptions.dartOut ?? '';
     final String testOutPath = generatorOptions.testOut ?? '';
     _writeTestPrologue(generatorOptions, root, indent);
     _writeTestImports(generatorOptions, root, indent);
-    final String relativeDartPath = path.Context(
-      style: path.Style.posix,
-    ).relative(
-      _posixify(sourceOutPath),
-      from: _posixify(path.dirname(testOutPath)),
-    );
+    final String relativeDartPath = path.Context(style: path.Style.posix)
+        .relative(
+          _posixify(sourceOutPath),
+          from: _posixify(path.dirname(testOutPath)),
+        );
     if (!relativeDartPath.contains('/lib/')) {
       // If we can't figure out the package name or the relative path doesn't
       // include a 'lib' directory, try relative path import which only works in
@@ -1081,7 +1087,7 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     );
     for (final AstHostApi api in root.apis.whereType<AstHostApi>()) {
       if (api.dartHostTestHandler != null) {
-        final AstFlutterApi mockApi = AstFlutterApi(
+        final mockApi = AstFlutterApi(
           name: api.dartHostTestHandler!,
           methods: api.methods,
           documentationComments: api.documentationComments,
@@ -1091,13 +1097,14 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
           root,
           indent,
           mockApi,
-          channelNameFunc:
-              (Method func) => makeChannelName(api, func, dartPackageName),
+          channelNameFunc: (Method func) =>
+              makeChannelName(api, func, dartPackageName),
           isMockHandler: true,
           dartPackageName: dartPackageName,
         );
       }
     }
+    sink.write(indent.toString());
   }
 
   /// Writes file header to sink.
@@ -1108,7 +1115,7 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     indent.writeln('// ${getGeneratedCodeWarning()}');
     indent.writeln('// $seeAlsoWarning');
     indent.writeln(
-      '// ignore_for_file: public_member_api_docs, non_constant_identifier_names, avoid_as, unused_import, unnecessary_parenthesis, unnecessary_import, no_leading_underscores_for_local_identifiers',
+      '// ignore_for_file: public_member_api_docs, non_constant_identifier_names, avoid_as, unused_import, unnecessary_parenthesis, unnecessary_import, no_leading_underscores_for_local_identifiers, omit_obvious_local_variable_types',
     );
     indent.writeln('// ignore_for_file: avoid_relative_lib_imports');
   }
@@ -1135,7 +1142,7 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     required String dartPackageName,
   }) {
     if (root.containsHostApi || root.containsProxyApi) {
-      _writeCreateConnectionError(indent);
+      _writeExtractReplyValueOrThrow(indent);
     }
     if (root.containsFlutterApi ||
         root.containsProxyApi ||
@@ -1144,6 +1151,7 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     }
     if (root.classes.isNotEmpty) {
       _writeDeepEquals(indent);
+      _writeDeepHash(indent);
     }
     if (root.containsProxyApi) {
       proxy_api_helper.writeProxyApiPigeonOverrides(
@@ -1154,7 +1162,7 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
     }
   }
 
-  /// Writes [wrapResponse] method.
+  /// Writes the `wrapResponse` method.
   void _writeWrapResponse(InternalDartOptions opt, Root root, Indent indent) {
     indent.newln();
     indent.writeScoped(
@@ -1177,30 +1185,105 @@ final BinaryMessenger? ${varNamePrefix}binaryMessenger;
   void _writeDeepEquals(Indent indent) {
     indent.format(r'''
 bool _deepEquals(Object? a, Object? b) {
+  if (identical(a, b)) {
+    return true;
+  }
+  if (a is double && b is double) {
+    if (a.isNaN && b.isNaN) {
+      return true;
+    }
+    return a == b;
+  }
   if (a is List && b is List) {
     return a.length == b.length &&
         a.indexed
-        .every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
+            .every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
   }
   if (a is Map && b is Map) {
-    return a.length == b.length && a.entries.every((MapEntry<Object?, Object?> entry) =>
-        (b as Map<Object?, Object?>).containsKey(entry.key) &&
-        _deepEquals(entry.value, b[entry.key]));
+    if (a.length != b.length) {
+      return false;
+    }
+    for (final MapEntry<Object?, Object?> entryA in a.entries) {
+      bool found = false;
+      for (final MapEntry<Object?, Object?> entryB in b.entries) {
+        if (_deepEquals(entryA.key, entryB.key)) {
+          if (_deepEquals(entryA.value, entryB.value)) {
+            found = true;
+            break;
+          } else {
+            return false;
+          }
+        }
+      }
+      if (!found) {
+        return false;
+      }
+    }
+    return true;
   }
   return a == b;
 }
 ''');
   }
 
-  void _writeCreateConnectionError(Indent indent) {
+  void _writeDeepHash(Indent indent) {
+    indent.format(r'''
+int _deepHash(Object? value) {
+  if (value is List) {
+    return Object.hashAll(value.map(_deepHash));
+  }
+  if (value is Map) {
+    int result = 0;
+    for (final MapEntry<Object?, Object?> entry in value.entries) {
+      result += (_deepHash(entry.key) * 31) ^ _deepHash(entry.value);
+    }
+    return result;
+  }
+  if (value is double && value.isNaN) {
+    // Normalize NaN to a consistent hash.
+    return 0x7FF8000000000000.hashCode;
+  }
+  if (value is double && value == 0.0) {
+    // Normalize -0.0 to 0.0 so they have the same hash code.
+    return 0.0.hashCode;
+  }
+  return value.hashCode;
+}
+''');
+  }
+
+  static void _writeExtractReplyValueOrThrow(Indent indent) {
     indent.newln();
     indent.format('''
-PlatformException _createConnectionError(String channelName) {
-\treturn PlatformException(
-\t\tcode: 'channel-error',
-\t\tmessage: 'Unable to establish connection on channel: "\$channelName".',
-\t);
-}''');
+Object? _extractReplyValueOrThrow(
+\t\tList<Object?>? replyList,
+\t\tString channelName, {
+\t\trequired bool isNullValid,
+}) {
+\tif (replyList == null) {
+\t\tthrow PlatformException(
+\t\t\tcode: 'channel-error',
+\t\t\tmessage: 'Unable to establish connection on channel: "\$channelName".',
+\t\t);
+\t} else if (replyList.length > 1) {
+\t\tthrow PlatformException(
+\t\t\tcode: replyList[0]! as String,
+\t\t\tmessage: replyList[1] as String?,
+\t\t\tdetails: replyList[2],
+\t\t);''');
+    // On iOS we can return nil from functions to accommodate error
+    // handling.  Returning a nil value and not returning an error is an
+    // exception.
+    indent.format('''
+\t} else if (!isNullValid && (replyList.isNotEmpty && replyList[0] == null)) {
+\t\tthrow PlatformException(
+\t\t\tcode: 'null-error',
+\t\t\tmessage: 'Host platform returned null value for non-null return value.',
+\t\t);
+\t}
+\treturn replyList.firstOrNull;
+}
+''');
   }
 
   void _writeCodecOverflowUtilities(Indent indent, List<EnumeratedType> types) {
@@ -1232,7 +1315,7 @@ if (wrapped == null) {
 }
 ''');
         indent.writeScoped('switch (type) {', '}', () {
-          int nonSerializedClassCount = 0;
+          var nonSerializedClassCount = 0;
           for (int i = totalCustomCodecKeysAllowed; i < types.length; i++) {
             if (types[i].associatedClass?.isSealed ?? false) {
               nonSerializedClassCount++;
@@ -1270,7 +1353,7 @@ if (wrapped == null) {
     addDocumentationComments(indent, documentationComments, docCommentSpec);
     final String argSignature = _getMethodParameterSignature(parameters);
     indent.write(
-      'Future<${addGenericTypesNullable(returnType)}> $name($argSignature) async ',
+      'Future<${addGenericTypes(returnType)}> $name($argSignature) async ',
     );
     indent.addScoped('{', '}', () {
       writeHostMethodMessageCall(
@@ -1292,7 +1375,7 @@ if (wrapped == null) {
     required bool addSuffixVariable,
     bool insideAsyncMethod = true,
   }) {
-    String sendArgument = 'null';
+    var sendArgument = 'null';
     if (parameters.isNotEmpty) {
       final Iterable<String> argExpressions = indexMap(parameters, (
         int index,
@@ -1303,13 +1386,13 @@ if (wrapped == null) {
       });
       sendArgument = '<Object?>[${argExpressions.join(', ')}]';
     }
-    final String channelSuffix = addSuffixVariable ? '\$$_suffixVarName' : '';
-    final String constOrFinal = addSuffixVariable ? 'final' : 'const';
+    final channelSuffix = addSuffixVariable ? '\$$_suffixVarName' : '';
+    final constOrFinal = addSuffixVariable ? 'final' : 'const';
     indent.writeln(
-      "$constOrFinal String ${varNamePrefix}channelName = '$channelName$channelSuffix';",
+      "$constOrFinal ${varNamePrefix}channelName = '$channelName$channelSuffix';",
     );
     indent.writeScoped(
-      'final BasicMessageChannel<Object?> ${varNamePrefix}channel = BasicMessageChannel<Object?>(',
+      'final ${varNamePrefix}channel = BasicMessageChannel<Object?>(',
       ');',
       () {
         indent.writeln('${varNamePrefix}channelName,');
@@ -1317,24 +1400,8 @@ if (wrapped == null) {
         indent.writeln('binaryMessenger: ${varNamePrefix}binaryMessenger,');
       },
     );
-    final String returnTypeName = _makeGenericTypeArguments(returnType);
-    final String genericCastCall = _makeGenericCastCall(returnType);
-    const String accessor = '${varNamePrefix}replyList[0]';
-    // Avoid warnings from pointlessly casting to `Object?`.
-    final String nullablyTypedAccessor =
-        returnTypeName == 'Object'
-            ? accessor
-            : '($accessor as $returnTypeName?)';
-    final String nullHandler =
-        returnType.isNullable ? (genericCastCall.isEmpty ? '' : '?') : '!';
-    String returnStatement = 'return';
-    if (!returnType.isVoid) {
-      returnStatement =
-          '$returnStatement $nullablyTypedAccessor$nullHandler$genericCastCall';
-    }
-    returnStatement = '$returnStatement;';
 
-    const String sendFutureVar = '${varNamePrefix}sendFuture';
+    const sendFutureVar = '${varNamePrefix}sendFuture';
     indent.writeln(
       'final Future<Object?> $sendFutureVar = ${varNamePrefix}channel.send($sendArgument);',
     );
@@ -1347,31 +1414,23 @@ if (wrapped == null) {
     }
 
     indent.format('''
-final List<Object?>? ${varNamePrefix}replyList =
-\t\tawait $sendFutureVar as List<Object?>?;
-if (${varNamePrefix}replyList == null) {
-\tthrow _createConnectionError(${varNamePrefix}channelName);
-} else if (${varNamePrefix}replyList.length > 1) {
-\tthrow PlatformException(
-\t\tcode: ${varNamePrefix}replyList[0]! as String,
-\t\tmessage: ${varNamePrefix}replyList[1] as String?,
-\t\tdetails: ${varNamePrefix}replyList[2],
-\t);''');
-    // On iOS we can return nil from functions to accommodate error
-    // handling.  Returning a nil value and not returning an error is an
-    // exception.
-    if (!returnType.isNullable && !returnType.isVoid) {
-      indent.format('''
-} else if (${varNamePrefix}replyList[0] == null) {
-\tthrow PlatformException(
-\t\tcode: 'null-error',
-\t\tmessage: 'Host platform returned null value for non-null return value.',
-\t);''');
+final ${varNamePrefix}replyList = await $sendFutureVar as List<Object?>?;
+''');
+    final extractCall =
+        '''
+_extractReplyValueOrThrow(
+\t\t${varNamePrefix}replyList,
+\t\t${varNamePrefix}channelName,
+\t\tisNullValid: ${returnType.isNullable || returnType.isVoid},
+)
+''';
+    if (returnType.isVoid) {
+      indent.format('$extractCall;');
+    } else {
+      const accessor = '${varNamePrefix}replyValue';
+      indent.format('final Object? $accessor = $extractCall;');
+      indent.format('return ${_castValue(accessor, returnType)};');
     }
-    indent.format('''
-} else {
-\t$returnStatement
-}''');
 
     if (!insideAsyncMethod) {
       indent.dec();
@@ -1401,18 +1460,16 @@ if (${varNamePrefix}replyList == null) {
     indent.write('');
     indent.addScoped('{', '}', () {
       indent.writeln(
-        'final BasicMessageChannel<Object?> ${varNamePrefix}channel = BasicMessageChannel<Object?>(',
+        'final ${varNamePrefix}channel = BasicMessageChannel<Object?>(',
       );
       indent.nest(2, () {
-        final String channelSuffix =
-            addSuffixVariable ? r'$messageChannelSuffix' : '';
+        final channelSuffix = addSuffixVariable ? r'$messageChannelSuffix' : '';
         indent.writeln("'$channelName$channelSuffix', $pigeonChannelCodec,");
         indent.writeln('binaryMessenger: binaryMessenger);');
       });
-      final String messageHandlerSetterWithOpeningParentheses =
-          isMockHandler
-              ? '_testBinaryMessengerBinding!.defaultBinaryMessenger.setMockDecodedMessageHandler<Object?>(${varNamePrefix}channel, '
-              : '${varNamePrefix}channel.setMessageHandler(';
+      final messageHandlerSetterWithOpeningParentheses = isMockHandler
+          ? '_testBinaryMessengerBinding!.defaultBinaryMessenger.setMockDecodedMessageHandler<Object?>(${varNamePrefix}channel, '
+          : '${varNamePrefix}channel.setMessageHandler(';
       indent.write('if ($nullHandlerExpression) ');
       indent.addScoped('{', '}', () {
         indent.writeln('${messageHandlerSetterWithOpeningParentheses}null);');
@@ -1423,70 +1480,52 @@ if (${varNamePrefix}replyList == null) {
           '$messageHandlerSetterWithOpeningParentheses(Object? message) async ',
         );
         indent.addScoped('{', '});', () {
-          final String returnTypeString = addGenericTypesNullable(returnType);
-          final bool isAsync = isAsynchronous;
-          const String emptyReturnStatement =
-              'return wrapResponse(empty: true);';
+          final String returnTypeString = addGenericTypes(returnType);
+          const emptyReturnStatement = 'return wrapResponse(empty: true);';
           String call;
           if (parameters.isEmpty) {
             call = 'api.$name()';
           } else {
-            indent.writeln('assert(message != null,');
-            indent.writeln("'Argument for $channelName was null.');");
-            const String argsArray = 'args';
+            const argsArray = 'args';
             indent.writeln(
-              'final List<Object?> $argsArray = (message as List<Object?>?)!;',
+              'final List<Object?> $argsArray = message! as List<Object?>;',
             );
-            String argNameFunc(int index, NamedType type) =>
-                _getSafeArgumentName(index, type);
             enumerate(parameters, (int count, NamedType arg) {
-              final String argType = _addGenericTypes(arg.type);
-              final String argName = argNameFunc(count, arg);
-              final String genericArgType = _makeGenericTypeArguments(arg.type);
-              final String castCall = _makeGenericCastCall(arg.type);
-
-              final String leftHandSide = 'final $argType? $argName';
-
+              final String argType = addGenericTypes(arg.type);
+              final String argName = _getSafeArgumentName(count, arg);
+              final argValue = '$argsArray[$count]';
               indent.writeln(
-                '$leftHandSide = ($argsArray[$count] as $genericArgType?)${castCall.isEmpty ? '' : '?$castCall'};',
+                'final $argType $argName = ${_castValue(argValue, arg.type)};',
               );
-
-              if (!arg.type.isNullable) {
-                indent.writeln('assert($argName != null,');
-                indent.writeln(
-                  "    'Argument for $channelName was null, expected non-null $argType.');",
-                );
-              }
             });
             final Iterable<String> argNames = indexMap(parameters, (
               int index,
               Parameter field,
             ) {
               final String name = _getSafeArgumentName(index, field);
-              return '${field.isNamed ? '${field.name}: ' : ''}$name${field.type.isNullable ? '' : '!'}';
+              return '${field.isNamed ? '${field.name}: ' : ''}$name';
             });
             call = onCreateApiCall(name, parameters, argNames);
           }
           indent.writeScoped('try {', '} ', () {
             if (returnType.isVoid) {
-              if (isAsync) {
+              if (isAsynchronous) {
                 indent.writeln('await $call;');
               } else {
                 indent.writeln('$call;');
               }
               indent.writeln(emptyReturnStatement);
             } else {
-              if (isAsync) {
+              if (isAsynchronous) {
                 indent.writeln('final $returnTypeString output = await $call;');
               } else {
                 indent.writeln('final $returnTypeString output = $call;');
               }
 
-              const String returnExpression = 'output';
-              final String returnStatement =
-                  isMockHandler
-                      ? 'return <Object?>[$returnExpression];'
-                      : 'return wrapResponse(result: $returnExpression);';
+              const returnExpression = 'output';
+              final returnStatement = isMockHandler
+                  ? 'return <Object?>[$returnExpression];'
+                  : 'return wrapResponse(result: $returnExpression);';
               indent.writeln(returnStatement);
             }
           }, addTrailingNewline: false);
@@ -1515,7 +1554,7 @@ if (${varNamePrefix}replyList == null) {
 
 /// Converts a [TypeDeclaration] to a `code_builder` Reference.
 cb.Reference refer(TypeDeclaration type, {bool asFuture = false}) {
-  final String symbol = addGenericTypesNullable(type);
+  final String symbol = addGenericTypes(type);
   return cb.refer(asFuture ? 'Future<$symbol>' : symbol);
 }
 
@@ -1526,19 +1565,41 @@ String _escapeForDartSingleQuotedString(String raw) {
       .replaceAll(r"'", r"\'");
 }
 
-/// Creates a Dart type where all type arguments are [Objects].
+/// Creates a Dart type where all type arguments are [Object]s.
 String _makeGenericTypeArguments(TypeDeclaration type) {
-  return type.typeArguments.isNotEmpty
-      ? '${type.baseName}<${type.typeArguments.map<String>((TypeDeclaration e) => 'Object?').join(', ')}>'
-      : _addGenericTypes(type);
+  if (type.typeArguments.isEmpty) {
+    return addGenericTypes(type);
+  }
+
+  final withTypeArguments =
+      '${type.baseName}<${type.typeArguments.map<String>((TypeDeclaration e) => 'Object?').join(', ')}>';
+  return '$withTypeArguments${type.isNullable ? '?' : ''}';
 }
 
-/// Creates a `.cast<>` call for an type. Returns an empty string if the
-/// type has no type arguments.
-String _makeGenericCastCall(TypeDeclaration type) {
-  return type.typeArguments.isNotEmpty
-      ? '.cast<${_flattenTypeArguments(type.typeArguments)}>()'
-      : '';
+/// Casts a value to the expected type, considering nullability, and generic
+/// types.
+String _castValue(String value, TypeDeclaration type) {
+  final String typeWithTypeArgs = _makeGenericTypeArguments(type);
+  final nullAssert = type.isNullable ? '' : '!';
+  value = '$value$nullAssert';
+  if (type.typeArguments.isEmpty && type.baseName == 'Object') {
+    return value;
+  }
+
+  final valueWithTypeCast = '$value as $typeWithTypeArgs';
+
+  final List<TypeDeclaration> typeArguments = type.typeArguments;
+  if (typeArguments.isEmpty) {
+    return valueWithTypeCast;
+  }
+  if (typeArguments.every((e) => e.baseName == 'Object' && e.isNullable)) {
+    return valueWithTypeCast;
+  }
+
+  final nullAwareOperator = type.isNullable ? '?' : '';
+  final castCall =
+      '$nullAwareOperator.cast<${_flattenTypeArguments(typeArguments)}>()';
+  return '($valueWithTypeCast)$castCall';
 }
 
 /// Returns an argument name that can be used in a context where it is possible to collide.
@@ -1555,29 +1616,27 @@ String _getMethodParameterSignature(
   Iterable<Parameter> parameters, {
   bool addTrailingComma = false,
 }) {
-  String signature = '';
+  var signature = '';
   if (parameters.isEmpty) {
     return signature;
   }
 
-  final List<Parameter> requiredPositionalParams =
-      parameters
-          .where((Parameter p) => p.isPositional && !p.isOptional)
-          .toList();
-  final List<Parameter> optionalPositionalParams =
-      parameters
-          .where((Parameter p) => p.isPositional && p.isOptional)
-          .toList();
-  final List<Parameter> namedParams =
-      parameters.where((Parameter p) => !p.isPositional).toList();
+  final List<Parameter> requiredPositionalParams = parameters
+      .where((Parameter p) => p.isPositional && !p.isOptional)
+      .toList();
+  final List<Parameter> optionalPositionalParams = parameters
+      .where((Parameter p) => p.isPositional && p.isOptional)
+      .toList();
+  final List<Parameter> namedParams = parameters
+      .where((Parameter p) => !p.isPositional)
+      .toList();
 
   String getParameterString(Parameter p) {
-    final String required = p.isRequired && !p.isPositional ? 'required ' : '';
+    final required = p.isRequired && !p.isPositional ? 'required ' : '';
 
-    final String type = addGenericTypesNullable(p.type);
+    final String type = addGenericTypes(p.type);
 
-    final String defaultValue =
-        p.defaultValue == null ? '' : ' = ${p.defaultValue}';
+    final defaultValue = p.defaultValue == null ? '' : ' = ${p.defaultValue}';
     return '$required$type ${p.name}$defaultValue';
   }
 
@@ -1595,23 +1654,22 @@ String _getMethodParameterSignature(
   if (requiredPositionalParams.isNotEmpty) {
     signature = baseParameterString;
   }
-  final String trailingComma =
+  final trailingComma =
       optionalPositionalParams.isNotEmpty || namedParams.isNotEmpty ? ',' : '';
-  final String baseParams =
-      signature.isNotEmpty ? '$signature$trailingComma ' : '';
+  final baseParams = signature.isNotEmpty ? '$signature$trailingComma ' : '';
   if (optionalPositionalParams.isNotEmpty) {
-    final String trailingComma =
+    final trailingComma =
         requiredPositionalParams.length + optionalPositionalParams.length > 2
-            ? ','
-            : '';
+        ? ','
+        : '';
     return '$baseParams[$optionalParameterString$trailingComma]';
   }
   if (namedParams.isNotEmpty) {
-    final String trailingComma =
+    final trailingComma =
         addTrailingComma ||
-                requiredPositionalParams.length + namedParams.length > 2
-            ? ', '
-            : '';
+            requiredPositionalParams.length + namedParams.length > 2
+        ? ', '
+        : '';
     return '$baseParams{$namedParameterString$trailingComma}';
   }
   return signature;
@@ -1622,41 +1680,33 @@ String _getMethodParameterSignature(
 String _flattenTypeArguments(List<TypeDeclaration> args) {
   return args
       .map<String>(
-        (TypeDeclaration arg) =>
-            arg.typeArguments.isEmpty
-                ? '${arg.baseName}${arg.isNullable ? '?' : ''}'
-                : '${arg.baseName}<${_flattenTypeArguments(arg.typeArguments)}>${arg.isNullable ? '?' : ''}',
+        (TypeDeclaration arg) => arg.typeArguments.isEmpty
+            ? '${arg.baseName}${arg.isNullable ? '?' : ''}'
+            : '${arg.baseName}<${_flattenTypeArguments(arg.typeArguments)}>${arg.isNullable ? '?' : ''}',
       )
       .join(', ');
 }
 
-/// Creates the type declaration for use in Dart code from a [NamedType] making sure
-/// that type arguments are used for primitive generic types.
-String _addGenericTypes(TypeDeclaration type) {
+/// Returns the string representation of a [TypeDeclaration], including type
+/// arguments and a nullability suffix, if the type is nullable.
+String addGenericTypes(TypeDeclaration type) {
   final List<TypeDeclaration> typeArguments = type.typeArguments;
-  switch (type.baseName) {
-    case 'List':
-      return typeArguments.isEmpty
+  final String genericType = switch (type.baseName) {
+    'List' =>
+      typeArguments.isEmpty
           ? 'List<Object?>'
-          : 'List<${_flattenTypeArguments(typeArguments)}>';
-    case 'Map':
-      return typeArguments.isEmpty
+          : 'List<${_flattenTypeArguments(typeArguments)}>',
+    'Map' =>
+      typeArguments.isEmpty
           ? 'Map<Object?, Object?>'
-          : 'Map<${_flattenTypeArguments(typeArguments)}>';
-    default:
-      return type.baseName;
-  }
-}
-
-/// Converts the type signature of a [TypeDeclaration] that include generic
-/// types.
-String addGenericTypesNullable(TypeDeclaration type) {
-  final String genericType = _addGenericTypes(type);
+          : 'Map<${_flattenTypeArguments(typeArguments)}>',
+    _ => type.baseName,
+  };
   return type.isNullable ? '$genericType?' : genericType;
 }
 
 /// Converts [inputPath] to a posix absolute path.
 String _posixify(String inputPath) {
-  final path.Context context = path.Context(style: path.Style.posix);
+  final context = path.Context(style: path.Style.posix);
   return context.fromUri(path.toUri(path.absolute(inputPath)));
 }

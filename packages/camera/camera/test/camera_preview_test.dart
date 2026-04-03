@@ -18,6 +18,7 @@ class FakeController extends ValueNotifier<CameraValue>
     name: '',
     lensDirection: CameraLensDirection.back,
     sensorOrientation: 0,
+    lensType: CameraLensType.ultraWide,
   );
 
   @override
@@ -111,6 +112,7 @@ class FakeController extends ValueNotifier<CameraValue>
   @override
   Future<void> startVideoRecording({
     onLatestImageAvailable? onAvailable,
+    bool enablePersistentRecording = true,
   }) async {}
 
   @override
@@ -138,6 +140,16 @@ class FakeController extends ValueNotifier<CameraValue>
   CameraDescription get description => value.description;
 
   @override
+  Future<void> setVideoStabilizationMode(
+    VideoStabilizationMode mode, {
+    bool allowFallback = true,
+  }) async {}
+
+  @override
+  Future<Iterable<VideoStabilizationMode>>
+  getSupportedVideoStabilizationModes() async => <VideoStabilizationMode>[];
+
+  @override
   bool supportsImageStreaming() => true;
 }
 
@@ -148,7 +160,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -187,7 +199,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -226,7 +238,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -265,7 +277,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -304,7 +316,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -342,7 +354,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -380,7 +392,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -418,7 +430,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -456,7 +468,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -490,7 +502,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -524,7 +536,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -558,7 +570,7 @@ void main() {
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-        final FakeController controller = FakeController();
+        final controller = FakeController();
         addTearDown(controller.dispose);
 
         controller.value = controller.value.copyWith(
@@ -592,7 +604,7 @@ void main() {
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    final FakeController controller = FakeController();
+    final controller = FakeController();
     addTearDown(controller.dispose);
     controller.value = controller.value.copyWith(
       isInitialized: true,

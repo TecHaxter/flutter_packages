@@ -607,6 +607,13 @@
   }
 }
 
+- (void)addSceneDelegate:(nonnull NSObject<FlutterSceneLifeCycleDelegate> *)delegate {
+}
+
+- (nullable NSObject *)valuePublishedByPlugin:(nonnull NSString *)pluginKey {
+  return nil;
+}
+
 @end
 
 // This FlutterBinaryMessenger is a protocol, so to make a stub it has to be implemented.

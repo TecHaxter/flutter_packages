@@ -11,7 +11,7 @@ a separate video player positioned on top of the app's content video player.
 
 |             | Android | iOS   |
 |-------------|---------|-------|
-| **Support** | SDK 21+ | 12.0+ |
+| **Support** | SDK 24+ | 13.0+ |
 
 **NOTE:**
 * Background Audio ads and Google Dynamic Ad Insertion methods are currently not supported.
@@ -23,7 +23,7 @@ guide:
 
 * [AdDisplayContainer][3]: A container object where ads are rendered.
 * [AdsLoader][4]: Requests ads and handles events from ads request responses. You should only
-instantiate one ads loader, which can be reused throughout the life of the application.
+instantiate one ads loader at a time, which can be reused throughout the lifecycle of a page.
 * [AdsRequest][5]: An object that defines an ads request. Ads requests specify the URL for the VAST
 ad tag, as well as additional parameters, such as ad dimensions.
 * [AdsManager][6]: Contains the response to the ads request, controls ad playback,
@@ -67,8 +67,8 @@ android {
 // ···
     compileOptions {
         coreLibraryDesugaringEnabled true
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     // ···
 }
@@ -236,41 +236,40 @@ Widget build(BuildContext context) {
     body: Center(
       child: SizedBox(
         width: 300,
-        child:
-            !_contentVideoController.value.isInitialized
-                ? Container()
-                : AspectRatio(
-                  aspectRatio: _contentVideoController.value.aspectRatio,
-                  child: Stack(
-                    children: <Widget>[
-                      // The display container must be on screen before any Ads can be
-                      // loaded and can't be removed between ads. This handles clicks for
-                      // ads.
-                      _adDisplayContainer,
-                      if (_shouldShowContentVideo)
-                        VideoPlayer(_contentVideoController),
-                    ],
-                  ),
+        child: !_contentVideoController.value.isInitialized
+            ? Container()
+            : AspectRatio(
+                aspectRatio: _contentVideoController.value.aspectRatio,
+                child: Stack(
+                  children: <Widget>[
+                    // The display container must be on screen before any Ads can be
+                    // loaded and can't be removed between ads. This handles clicks for
+                    // ads.
+                    _adDisplayContainer,
+                    if (_shouldShowContentVideo)
+                      VideoPlayer(_contentVideoController),
+                  ],
                 ),
+              ),
       ),
     ),
     floatingActionButton:
         _contentVideoController.value.isInitialized && _shouldShowContentVideo
-            ? FloatingActionButton(
-              onPressed: () {
-                setState(() {
-                  _contentVideoController.value.isPlaying
-                      ? _contentVideoController.pause()
-                      : _contentVideoController.play();
-                });
-              },
-              child: Icon(
+        ? FloatingActionButton(
+            onPressed: () {
+              setState(() {
                 _contentVideoController.value.isPlaying
-                    ? Icons.pause
-                    : Icons.play_arrow,
-              ),
-            )
-            : null,
+                    ? _contentVideoController.pause()
+                    : _contentVideoController.play();
+              });
+            },
+            child: Icon(
+              _contentVideoController.value.isPlaying
+                  ? Icons.pause
+                  : Icons.play_arrow,
+            ),
+          )
+        : null,
   );
 }
 

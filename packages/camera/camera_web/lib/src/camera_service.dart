@@ -111,8 +111,8 @@ class CameraService {
   /// or the camera has not been initialized or started.
   ZoomLevelCapability getZoomLevelCapabilityForCamera(Camera camera) {
     final web.MediaDevices mediaDevices = window.navigator.mediaDevices;
-    final web.MediaTrackSupportedConstraints supportedConstraints =
-        mediaDevices.getSupportedConstraints();
+    final web.MediaTrackSupportedConstraints supportedConstraints = mediaDevices
+        .getSupportedConstraints();
     final bool zoomLevelSupported = supportedConstraints.zoomNullable ?? false;
 
     if (!zoomLevelSupported) {
@@ -131,8 +131,9 @@ class CameraService {
 
       /// The zoom level capability is represented by MediaSettingsRange.
       /// See: https://developer.mozilla.org/en-US/docs/Web/API/MediaSettingsRange
-      final WebTweakMediaSettingsRange? zoomLevelCapability =
-          defaultVideoTrack.getCapabilities().zoomNullable;
+      final WebTweakMediaSettingsRange? zoomLevelCapability = defaultVideoTrack
+          .getCapabilities()
+          .zoomNullable;
 
       if (zoomLevelCapability != null) {
         return ZoomLevelCapability(
@@ -162,8 +163,8 @@ class CameraService {
     final web.MediaDevices mediaDevices = window.navigator.mediaDevices;
 
     // Check if the camera facing mode is supported by the current browser.
-    final web.MediaTrackSupportedConstraints supportedConstraints =
-        mediaDevices.getSupportedConstraints();
+    final web.MediaTrackSupportedConstraints supportedConstraints = mediaDevices
+        .getSupportedConstraints();
 
     // Return null if the facing mode is not supported.
     if (!supportedConstraints.facingMode) {
@@ -195,15 +196,16 @@ class CameraService {
         return null;
       }
 
-      final web.MediaTrackCapabilities videoTrackCapabilities =
-          videoTrack.getCapabilities();
+      final web.MediaTrackCapabilities videoTrackCapabilities = videoTrack
+          .getCapabilities();
 
       // A list of facing mode capabilities as
       // the camera may support multiple facing modes.
       final List<String> facingModeCapabilities =
-          videoTrackCapabilities.facingMode.toDart
+          videoTrackCapabilities.facingModeNullable?.toDart
               .map((JSString e) => e.toDart)
-              .toList();
+              .toList() ??
+          <String>[];
 
       if (facingModeCapabilities.isNotEmpty) {
         final String facingModeCapability = facingModeCapabilities.first;
