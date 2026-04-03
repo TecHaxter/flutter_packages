@@ -402,13 +402,13 @@ class CameraService {
       context.drawImage(videoElement, 0, 0);
       imageData = context.getImageData(0, 0, width, height);
     } else {
-      if (_canvasElement == null ||
-          _canvasElement!.width != width ||
-          _canvasElement!.height != height) {
-        _canvasElement =
-            web.CanvasElement()
-              ..height = height
-              ..width = width;
+      _canvasElement ??= web.CanvasElement()
+        ..height = height
+        ..width = width;
+      if (_canvasElement!.width != width || _canvasElement!.height != height) {
+        _canvasElement!
+          ..width = width
+          ..height = height;
       }
       final web.CanvasRenderingContext2D context = _canvasElement!.context2D;
 
