@@ -374,6 +374,9 @@ class CameraService {
   /// Used in [takeFrame] if `OffscreenCanvas` is supported
   web.OffscreenCanvas? _offscreenCanvas;
 
+  /// Used in [takeFrame] to cache 2D rendering context of [_offscreenCanvas]
+  web.OffscreenCanvasRenderingContext2D? _offscreenCanvasContext;
+
   /// Returns frame at a specific time using video element
   CameraImageData takeFrame(web.VideoElement videoElement) {
     final int width = videoElement.videoWidth;
@@ -392,15 +395,15 @@ class CameraService {
           ..width = width
           ..height = height;
       }
-      final context =
+      _offscreenCanvasContext ??=
           _offscreenCanvas!.getContext(
                 '2d',
                 <String, Object?>{'willReadFrequently': true}.jsify(),
               )!
               as web.OffscreenCanvasRenderingContext2D;
 
-      context.drawImage(videoElement, 0, 0);
-      imageData = context.getImageData(0, 0, width, height);
+      _offscreenCanvasContext!.drawImage(videoElement, 0, 0);
+      imageData = _offscreenCanvasContext!.getImageData(0, 0, width, height);
     } else {
       _canvasElement ??= web.CanvasElement()
         ..height = height
