@@ -165,7 +165,7 @@ class Camera {
   final bool canUseOffscreenCanvas;
 
   /// The tolerance for the camera streaming frame time.
-  final int _frameTimeToleranceMs = 8;
+  int get _frameTimeToleranceMs => 1000 / cameraStreamFPS ~/ 2;
 
   /// Initializes the camera stream displayed in the [videoElement].
   /// Registers the camera view with [textureId] under [_getViewType] type.
