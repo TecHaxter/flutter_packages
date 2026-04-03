@@ -726,4 +726,7 @@ class CameraPlugin extends CameraPlatform {
       ),
     );
   }
+
+  @override
+  bool supportsImageStreaming() => true;
 }
